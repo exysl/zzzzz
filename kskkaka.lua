@@ -775,7 +775,7 @@ function ZhonyaLib:CreateWindow(opts)
     end)
 
     local Win    = {}
-    local tabs   = {} -- Using an array instead of keyed table to allow duplicate names
+    local tabs   = {}
     local actTab = nil
     local tabIdx = 0
 
@@ -841,28 +841,16 @@ function ZhonyaLib:CreateWindow(opts)
             end
         end
 
-        hoverConn(nb.MouseEnter, function()    if actTab ~= nb then tw(nb, { BackgroundColor3 = c.card }, 0.1) end end)
-        hoverConn(nb.MouseLeave, function()    if actTab ~= nb then tw(nb, { BackgroundColor3 = c.side }, 0.1) end end)
-        
-        -- FIX: Reference the actual UI element (nb) rather than the name string
+        hoverConn(nb.MouseEnter, function()    if actTab ~= name then tw(nb, { BackgroundColor3 = c.card }, 0.1) end end)
+        hoverConn(nb.MouseLeave, function()    if actTab ~= name then tw(nb, { BackgroundColor3 = c.side }, 0.1) end end)
         nb.MouseButton1Click:Connect(function()
-            if actTab == nb then return end
-            if actTab then 
-                tabs[actTab].sa(false) 
-                tabs[actTab].pg.Visible = false 
-            end
-            actTab = nb
-            setAct(true)
-            showPg()
+            if actTab == name then return end
+            if tabs[actTab] then tabs[actTab].sa(false); tabs[actTab].pg.Visible = false end
+            actTab = name; setAct(true); showPg()
         end)
 
-        tabs[nb] = { sa = setAct, pg = pg }
-        
-        if idx == 1 then 
-            actTab = nb
-            setAct(true)
-            showPg()
-        end
+        tabs[name] = { sa = setAct, pg = pg }
+        if idx == 1 then actTab = name; setAct(true); showPg() end
 
         local lo = 0
         local function nlo() lo = lo + 1; return lo end
@@ -1223,6 +1211,7 @@ function ZhonyaLib:CreateWindow(opts)
                 TextColor3 = c.t1,
             }, wrap)
 
+            -- Shifted text slightly to make room for the new + / - icon
             local sLbl = ni("TextLabel", {
                 Size               = UDim2.new(0.4, 0, 0, 16),
                 AnchorPoint        = Vector2.new(1, 0),
@@ -1235,6 +1224,7 @@ function ZhonyaLib:CreateWindow(opts)
                 TextXAlignment     = Enum.TextXAlignment.Right,
             }, wrap)
 
+            -- FIX: Replaced the ▾ symbol with + and - to avoid missing font glitches
             local arr = ni("TextLabel", {
                 Size               = UDim2.fromOffset(14, 14),
                 AnchorPoint        = Vector2.new(1, 0.5),
@@ -1249,6 +1239,7 @@ function ZhonyaLib:CreateWindow(opts)
                 ZIndex             = 3,
             }, wrap)
 
+            -- Capped at 130px (exactly 5 items)
             local maxListHeight = 130
             local itemHeight = 26
             local listH = #opts * itemHeight
@@ -1310,7 +1301,7 @@ function ZhonyaLib:CreateWindow(opts)
 
                 if isOp then
                     lstF.Visible = true
-                    lstF.CanvasPosition = Vector2.new(0, 0)
+                    lstF.CanvasPosition = Vector2.new(0, 0) -- Reset scroll to top when opened
                 end
                 
                 arr.Text = isOp and "-" or "+"
