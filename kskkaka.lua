@@ -1,6 +1,5 @@
 --[[
     ZhonyaLib — Standalone UI Library (Mobile Enhanced)
-    ...
 ]]
 
 -- Services with cloneref support
@@ -471,7 +470,6 @@ function ZhonyaLib:CreateWindow(opts)
     end
     ni("Frame", { Size = UDim2.new(1, -16, 0, 1), Position = UDim2.new(0, 8, 0, 46), BackgroundColor3 = c.bdr, BorderSizePixel = 0, ZIndex = 2 }, sb)
 
-    -- FIX: Updated Sidebar to use AutomaticCanvasSize and UIListLayout for native scrolling
     local tabScroll = ni("ScrollingFrame", {
         Size                 = UDim2.new(1, -1, 1, -48),
         Position             = UDim2.fromOffset(0, 48),
@@ -484,7 +482,6 @@ function ZhonyaLib:CreateWindow(opts)
         AutomaticCanvasSize  = Enum.AutomaticSize.Y,
         ZIndex               = 2,
     }, sb)
-    -- Add layout and padding for the sidebar
     ni("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4) }, tabScroll)
     ni("UIPadding", { PaddingTop = UDim.new(0, 7), PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5) }, tabScroll)
 
@@ -786,7 +783,6 @@ function ZhonyaLib:CreateWindow(opts)
         tabIdx = tabIdx + 1
         local idx = tabIdx
 
-        -- FIX: The buttons now use LayoutOrder for automatic scrolling
         local nb = ni("TextButton", {
             Size             = UDim2.new(1, 0, 0, isMobile and 36 or 28),
             BackgroundColor3 = c.side,
@@ -1204,7 +1200,7 @@ function ZhonyaLib:CreateWindow(opts)
                 LayoutOrder      = nlo(),
                 ClipsDescendants = true,
             }, pg)
-            rnd(4, wrap); stk(c.bdr, 1, wrap)
+            rnd(4, wrap); local wStk = stk(c.bdr, 1, wrap)
 
             lbl({
                 Size       = UDim2.new(0.55, 0, 0, 16),
@@ -1215,10 +1211,11 @@ function ZhonyaLib:CreateWindow(opts)
                 TextColor3 = c.t1,
             }, wrap)
 
+            -- Shifted text slightly to make room for the new + / - icon
             local sLbl = ni("TextLabel", {
                 Size               = UDim2.new(0.4, 0, 0, 16),
                 AnchorPoint        = Vector2.new(1, 0),
-                Position           = UDim2.new(1, -10, 0, 8),
+                Position           = UDim2.new(1, -22, 0, 8),
                 BackgroundTransparency = 1,
                 Text               = tostring(cur),
                 TextColor3         = c.acc,
@@ -1227,18 +1224,27 @@ function ZhonyaLib:CreateWindow(opts)
                 TextXAlignment     = Enum.TextXAlignment.Right,
             }, wrap)
 
-            local arr = lbl({
-                Size           = UDim2.fromOffset(14, 14),
-                AnchorPoint    = Vector2.new(1, 0.5),
-                Position       = UDim2.new(1, -8, 0, 22),
-                Text           = "▾",
-                TextSize       = 10,
-                Font           = fn.bd,
-                TextXAlignment = Enum.TextXAlignment.Center,
-                TextColor3     = c.t2,
+            -- FIX: Replaced the ▾ symbol with + and - to avoid missing font glitches
+            local arr = ni("TextLabel", {
+                Size               = UDim2.fromOffset(14, 14),
+                AnchorPoint        = Vector2.new(1, 0.5),
+                Position           = UDim2.new(1, -8, 0, 16),
+                BackgroundTransparency = 1,
+                Text               = "+",
+                TextSize           = 14,
+                Font               = fn.bd,
+                TextXAlignment     = Enum.TextXAlignment.Center,
+                TextYAlignment     = Enum.TextYAlignment.Center,
+                TextColor3         = c.acc,
+                ZIndex             = 3,
             }, wrap)
 
-            local maxListHeight = 150
+            -- Capped at 130px (exactly 5 items)
+            local maxListHeight = 130
+            local itemHeight = 26
+            local listH = #opts * itemHeight
+            local visibleH = math.min(listH, maxListHeight)
+
             local lstF = ni("ScrollingFrame", {
                 Size             = UDim2.new(1, 0, 0, 0),
                 Position         = UDim2.new(0, 0, 0, 32),
@@ -1246,16 +1252,17 @@ function ZhonyaLib:CreateWindow(opts)
                 BorderSizePixel  = 0,
                 ZIndex           = 2,
                 ScrollingDirection = Enum.ScrollingDirection.Y,
-                ScrollBarThickness = 0, -- FIX: Removed the scrollbar artifact completely
-                CanvasSize       = UDim2.new(0, 0, 0, #opts * 27),
+                ScrollBarThickness = 2, 
+                ScrollBarImageColor3 = c.bdr,
+                CanvasSize       = UDim2.new(0, 0, 0, listH),
                 ScrollingEnabled = true,
                 Visible          = false,
             }, wrap)
-            vls(1, lstF)
+            vls(0, lstF)
 
             for _, opt in ipairs(opts) do
                 local ob = ni("TextButton", {
-                    Size             = UDim2.new(1, 0, 0, 26),
+                    Size             = UDim2.new(1, 0, 0, itemHeight),
                     BackgroundColor3 = c.cardHv,
                     Text             = opt,
                     TextColor3       = c.t1,
@@ -1265,13 +1272,14 @@ function ZhonyaLib:CreateWindow(opts)
                     BorderSizePixel  = 0,
                     ZIndex           = 3,
                 }, lstF)
-                hoverConn(ob.MouseEnter, function()  tw(ob, { TextColor3 = c.t0 }, 0.1) end)
-                hoverConn(ob.MouseLeave, function()  tw(ob, { TextColor3 = c.t1 }, 0.1) end)
+                hoverConn(ob.MouseEnter, function()  tw(ob, { TextColor3 = c.t0, BackgroundColor3 = c.card }, 0.1) end)
+                hoverConn(ob.MouseLeave, function()  tw(ob, { TextColor3 = c.t1, BackgroundColor3 = c.cardHv }, 0.1) end)
                 ob.MouseButton1Click:Connect(function()
                     cur = opt; sLbl.Text = opt; isOp = false
+                    arr.Text = "+"
+                    tw(wStk, { Color = c.bdr }, 0.15)
                     tw(wrap, { Size = UDim2.new(1, 0, 0, 32) }, 0.18)
                     tw(lstF, { Size = UDim2.new(1, 0, 0, 0) }, 0.18)
-                    tw(arr,  { Rotation = 0 }, 0.15)
                     task.delay(0.18, function() 
                         if not isOp then lstF.Visible = false end 
                     end)
@@ -1289,17 +1297,18 @@ function ZhonyaLib:CreateWindow(opts)
             
             iz.MouseButton1Click:Connect(function()
                 isOp = not isOp
-                local listH = #opts * 27
-                local visibleH = math.min(listH, maxListHeight)
-                local targetH = 32 + visibleH
+                local targetH = 32 + (isOp and visibleH or 0)
 
                 if isOp then
                     lstF.Visible = true
+                    lstF.CanvasPosition = Vector2.new(0, 0) -- Reset scroll to top when opened
                 end
+                
+                arr.Text = isOp and "-" or "+"
+                tw(wStk, { Color = isOp and c.acc or c.bdr }, 0.15)
 
-                tw(wrap, { Size = UDim2.new(1, 0, 0, isOp and targetH or 32) }, 0.2)
+                tw(wrap, { Size = UDim2.new(1, 0, 0, targetH) }, 0.2)
                 tw(lstF, { Size = UDim2.new(1, 0, 0, isOp and visibleH or 0) }, 0.2)
-                tw(arr,  { Rotation = isOp and 180 or 0 }, 0.15)
                 
                 if not isOp then
                     task.delay(0.2, function()
