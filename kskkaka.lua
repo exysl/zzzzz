@@ -282,7 +282,7 @@ function ZhonyaLib:CreateWindow(opts)
         Visible          = false,
         BorderSizePixel  = 0,
         Active           = true,
-        ClipsDescendants = false,  -- changed to false for dropdowns
+        ClipsDescendants = false,
     }, sg)
     rnd(7, hub)
     ni("UIStroke", { Color = c.bdr, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, hub)
@@ -471,6 +471,7 @@ function ZhonyaLib:CreateWindow(opts)
     end
     ni("Frame", { Size = UDim2.new(1, -16, 0, 1), Position = UDim2.new(0, 8, 0, 46), BackgroundColor3 = c.bdr, BorderSizePixel = 0, ZIndex = 2 }, sb)
 
+    -- FIX: Updated Sidebar to use AutomaticCanvasSize and UIListLayout for native scrolling
     local tabScroll = ni("ScrollingFrame", {
         Size                 = UDim2.new(1, -1, 1, -48),
         Position             = UDim2.fromOffset(0, 48),
@@ -480,8 +481,12 @@ function ZhonyaLib:CreateWindow(opts)
         ScrollingDirection   = Enum.ScrollingDirection.Y,
         ScrollBarThickness   = 0,
         CanvasSize           = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize  = Enum.AutomaticSize.Y,
         ZIndex               = 2,
     }, sb)
+    -- Add layout and padding for the sidebar
+    ni("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4) }, tabScroll)
+    ni("UIPadding", { PaddingTop = UDim.new(0, 7), PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5) }, tabScroll)
 
     -- User chip
     local chipH = isMobile and 56 or 48
@@ -780,17 +785,16 @@ function ZhonyaLib:CreateWindow(opts)
     function Win:CreateTab(name)
         tabIdx = tabIdx + 1
         local idx = tabIdx
-        local yp  = 7 + (idx - 1) * (isMobile and 38 or 34)
-        tabScroll.CanvasSize = UDim2.fromOffset(0, yp + (isMobile and 38 or 34) + 6)
 
+        -- FIX: The buttons now use LayoutOrder for automatic scrolling
         local nb = ni("TextButton", {
-            Size             = UDim2.new(1, -10, 0, isMobile and 36 or 28),
-            Position         = UDim2.new(0, 5, 0, yp),
+            Size             = UDim2.new(1, 0, 0, isMobile and 36 or 28),
             BackgroundColor3 = c.side,
             Text             = "",
             AutoButtonColor  = false,
             BorderSizePixel  = 0,
             ZIndex           = 2,
+            LayoutOrder      = idx,
         }, tabScroll)
         rnd(3, nb)
 
@@ -1242,9 +1246,10 @@ function ZhonyaLib:CreateWindow(opts)
                 BorderSizePixel  = 0,
                 ZIndex           = 2,
                 ScrollingDirection = Enum.ScrollingDirection.Y,
-                ScrollBarThickness = 4,
+                ScrollBarThickness = 0, -- FIX: Removed the scrollbar artifact completely
                 CanvasSize       = UDim2.new(0, 0, 0, #opts * 27),
                 ScrollingEnabled = true,
+                Visible          = false,
             }, wrap)
             vls(1, lstF)
 
@@ -1267,6 +1272,9 @@ function ZhonyaLib:CreateWindow(opts)
                     tw(wrap, { Size = UDim2.new(1, 0, 0, 32) }, 0.18)
                     tw(lstF, { Size = UDim2.new(1, 0, 0, 0) }, 0.18)
                     tw(arr,  { Rotation = 0 }, 0.15)
+                    task.delay(0.18, function() 
+                        if not isOp then lstF.Visible = false end 
+                    end)
                     if s.Callback then task.spawn(function() s.Callback(opt) end) end
                 end)
             end
@@ -1278,14 +1286,26 @@ function ZhonyaLib:CreateWindow(opts)
                 AutoButtonColor  = false,
                 ZIndex           = 4,
             }, wrap)
+            
             iz.MouseButton1Click:Connect(function()
                 isOp = not isOp
                 local listH = #opts * 27
                 local visibleH = math.min(listH, maxListHeight)
                 local targetH = 32 + visibleH
+
+                if isOp then
+                    lstF.Visible = true
+                end
+
                 tw(wrap, { Size = UDim2.new(1, 0, 0, isOp and targetH or 32) }, 0.2)
                 tw(lstF, { Size = UDim2.new(1, 0, 0, isOp and visibleH or 0) }, 0.2)
                 tw(arr,  { Rotation = isOp and 180 or 0 }, 0.15)
+                
+                if not isOp then
+                    task.delay(0.2, function()
+                        if not isOp then lstF.Visible = false end
+                    end)
+                end
             end)
 
             local o = {}
@@ -1296,7 +1316,6 @@ function ZhonyaLib:CreateWindow(opts)
 
         function Tab:CreateKeybind(s)
             if TOUCH then
-                -- Keybinds are not useful on mobile
                 local o = {}
                 function o:Set(v) end
                 function o:Get() return "None" end
