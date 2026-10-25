@@ -59,6 +59,7 @@ local lp  = plr.LocalPlayer
 -- every connection made on a global service goes through bind() so Destroy() can disconnect it
 local conns     = {}
 local unloadCbs = {}
+local extraGuis = {}   -- extra ScreenGuis (the full-screen unload prompt) destroyed on unload
 local function bind(sig, fn)
     local cn = sig:Connect(fn)
     table.insert(conns, cn)
@@ -192,6 +193,8 @@ do
 end
 local prev = gpar:FindFirstChild("ZhonyaLib_GUI")
 if prev then prev:Destroy() end
+local prev2 = gpar:FindFirstChild("ZhonyaLib_Confirm")
+if prev2 then prev2:Destroy() end
 
 -- Root ScreenGui
 local sg = ni("ScreenGui", {
@@ -688,6 +691,19 @@ function ZhonyaLib:CreateWindow(opts)
     end)
 
     -- ── Unload confirmation (opened by the red button) ────────────────────────
+    -- Own ScreenGui with IgnoreGuiInset so the dimmer covers the WHOLE screen,
+    -- including the strip under Roblox's top bar that the main GUI leaves free.
+    local confirmGui = ni("ScreenGui", {
+        Name           = "ZhonyaLib_Confirm",
+        ResetOnSpawn   = false,
+        IgnoreGuiInset = true,
+        DisplayOrder   = 1000,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, gpar)
+    pcall(function() confirmGui.ScreenInsets = Enum.ScreenInsets.None end)  -- also cover notch / safe areas
+    if syn and syn.protect_gui then pcall(function() syn.protect_gui(confirmGui) end) end
+    table.insert(extraGuis, confirmGui)
+
     confirm = ni("Frame", {
         Size                   = UDim2.fromScale(1, 1),
         BackgroundColor3       = c.blk,
@@ -696,7 +712,7 @@ function ZhonyaLib:CreateWindow(opts)
         Visible                = false,
         Active                 = true,       -- swallow clicks so nothing behind it can be pressed
         ZIndex                 = 150,
-    }, sg)
+    }, confirmGui)
 
     local cCard = ni("Frame", {
         Size             = UDim2.new(0.9, 0, 0, 176),
@@ -1526,6 +1542,7 @@ function ZhonyaLib:Destroy()
     for _, fn in ipairs(unloadCbs) do pcall(fn) end      -- your own cleanup first
     for _, cn in ipairs(conns) do pcall(function() cn:Disconnect() end) end
     table.clear(conns)
+    for _, g in ipairs(extraGuis) do pcall(function() g:Destroy() end) end
     pcall(function() sg:Destroy() end)
     local env = (getgenv and getgenv()) or _G
     if env.__ZhonyaLibUnload then env.__ZhonyaLibUnload = nil end
