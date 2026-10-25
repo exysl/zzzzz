@@ -39,7 +39,8 @@
     ZhonyaLib:Notify({ Content = "Hello World!", Duration = 3 })
     ZhonyaLib:Notify({ Content = "Warning!", Warn = true, Duration = 5 })
 
-    ZhonyaLib:Destroy()
+    ZhonyaLib:OnUnload(function() end)   -- cleanup hook: runs when the UI gets unloaded
+    ZhonyaLib:Destroy()                  -- unload everything (the red button does this after a Yes/No prompt)
 
     ─────────────────────────────────────────────────────────────────────────────
 ]]
@@ -55,6 +56,15 @@ local lp  = plr.LocalPlayer
 -- ── Touch helpers ─────────────────────────────────────────────────────────────
 -- TOUCH = phone/tablet (touch, no mouse). Used for sizing only; input code below
 -- handles mouse AND touch the same way so hybrid devices work too.
+-- every connection made on a global service goes through bind() so Destroy() can disconnect it
+local conns     = {}
+local unloadCbs = {}
+local function bind(sig, fn)
+    local cn = sig:Connect(fn)
+    table.insert(conns, cn)
+    return cn
+end
+
 local TOUCH    = uis.TouchEnabled and not uis.MouseEnabled
 local TS_BOOST = TOUCH and 2 or 0          -- bump every text size a little on phones
 local RH       = TOUCH and 38 or 32        -- row height (bigger touch targets)
@@ -176,6 +186,10 @@ local ZhonyaLib = {}
 ZhonyaLib.__index = ZhonyaLib
 
 -- Destroy any previous instance
+do
+    local env = (getgenv and getgenv()) or _G
+    if env.__ZhonyaLibUnload then pcall(env.__ZhonyaLibUnload) end
+end
 local prev = gpar:FindFirstChild("ZhonyaLib_GUI")
 if prev then prev:Destroy() end
 
@@ -269,6 +283,7 @@ end
 function ZhonyaLib:CreateWindow(opts)
     opts = opts or {}
     local title = opts.Title or "HUB"
+    if opts.OnUnload then table.insert(unloadCbs, opts.OnUnload) end
 
     local activeBk = Enum.KeyCode.LeftControl
 
@@ -340,7 +355,7 @@ function ZhonyaLib:CreateWindow(opts)
         return x, y
     end
 
-    uis.InputEnded:Connect(function(i)
+    bind(uis.InputEnded, function(i)
         if not drag then return end
         if i == dragObj
         or (dragObj.UserInputType == Enum.UserInputType.MouseButton1
@@ -348,7 +363,7 @@ function ZhonyaLib:CreateWindow(opts)
             drag = false
         end
     end)
-    uis.InputChanged:Connect(function(i)
+    bind(uis.InputChanged, function(i)
         if not drag then return end
         if i == dragObj
         or (dragObj.UserInputType == Enum.UserInputType.MouseButton1
@@ -358,7 +373,7 @@ function ZhonyaLib:CreateWindow(opts)
             dTgt = Vector2.new(clampPos(dPos0.X + dx, dPos0.Y + dy))
         end
     end)
-    rs.Heartbeat:Connect(function(dt)
+    bind(rs.Heartbeat, function(dt)
         if not drag then return end
         local cx = hub.Position.X.Offset
         local cy = hub.Position.Y.Offset
@@ -442,8 +457,9 @@ function ZhonyaLib:CreateWindow(opts)
     local bMin   = mkDot(c.dotY, DOT_B + DOT_S)
     local bMax   = mkDot(c.dotG, DOT_B)
 
+    local confirm   -- unload confirmation panel (created below, after the content area)
     bClose.MouseButton1Click:Connect(function()
-        hub.Visible = false
+        if confirm then confirm.Visible = true end
     end)
 
     -- ── Sidebar ───────────────────────────────────────────────────────────────
@@ -576,16 +592,16 @@ function ZhonyaLib:CreateWindow(opts)
         ZIndex              = 1,
     }, hub)
 
-    -- Minimize / maximize
-    bMin.MouseButton1Click:Connect(function()
+    -- Yellow = minimize to the bubble, Green = collapse / expand to the title bar
+    local function collapse()
         if mini then return end
         mini = true
         chipF.Visible = false; sb.Visible = false; scr.Visible = false
         if hTw then hTw:Cancel() end
         hTw = ts:Create(hub, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(HUB_W, 40) })
         hTw:Play(); hTw.Completed:Connect(function() hTw = nil end)
-    end)
-    bMax.MouseButton1Click:Connect(function()
+    end
+    local function expand()
         if not mini then return end
         mini = false
         if hTw then hTw:Cancel() end
@@ -594,36 +610,159 @@ function ZhonyaLib:CreateWindow(opts)
             hTw = nil
             task.delay(0.01, function() chipF.Visible = true; sb.Visible = true; scr.Visible = true end)
         end)
-    end)
+    end
+    bMin.MouseButton1Click:Connect(function() hub.Visible = false end)
+    bMax.MouseButton1Click:Connect(function() if mini then expand() else collapse() end end)
 
-    -- Mobile toggle button
+    -- ── Bubble (PC + mobile): tap = show/hide the window, drag = move it ──────
+    local BUB = 52
     local mbtn = ni("TextButton", {
-        Size             = UDim2.fromOffset(52, 52),
-        AnchorPoint      = Vector2.new(1, 1),
-        Position         = UDim2.new(1, -12, 1, -180),
+        Size             = UDim2.fromOffset(BUB, BUB),
+        AnchorPoint      = Vector2.new(0.5, 0.5),
+        Position         = UDim2.fromOffset(16 + BUB / 2, 200),
         BackgroundColor3 = c.accDm,
         BorderSizePixel  = 0,
         Text             = "",
         AutoButtonColor  = false,
         ZIndex           = 95,
-        Visible          = uis.TouchEnabled,
     }, sg)
     rnd(99, mbtn); stk(c.acc, 1.5, mbtn)
     ni("TextLabel", {
         Size               = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
-        Text               = "Z",
+        Text               = string.upper(string.sub(title, 1, 1)),
         TextColor3         = c.acc,
         TextSize           = 22,
         Font               = fn.bd,
         TextXAlignment     = Enum.TextXAlignment.Center,
         ZIndex             = 96,
     }, mbtn)
-    mbtn.MouseButton1Down:Connect(function() tw(mbtn, { Size = UDim2.fromOffset(46, 46) }, 0.08) end)
-    mbtn.MouseButton1Up:Connect(function()   tw(mbtn, { Size = UDim2.fromOffset(52, 52) }, 0.12) end)
-    mbtn.MouseButton1Click:Connect(function()
-        if hub then hub.Visible = not hub.Visible end
+
+    local function clampBubble(x, y)
+        local ss = sg.AbsoluteSize
+        return math.clamp(x, BUB / 2, math.max(BUB / 2, ss.X - BUB / 2)),
+               math.clamp(y, BUB / 2, math.max(BUB / 2, ss.Y - BUB / 2))
+    end
+
+    local bObj, bMoved = nil, false
+    local bStart, bPos0 = Vector2.zero, Vector2.zero
+
+    mbtn.InputBegan:Connect(function(i)
+        if bObj or not isPointer(i) then return end
+        bObj, bMoved = i, false
+        bStart = Vector2.new(i.Position.X, i.Position.Y)
+        bPos0  = Vector2.new(mbtn.Position.X.Offset, mbtn.Position.Y.Offset)
+        tw(mbtn, { Size = UDim2.fromOffset(BUB - 6, BUB - 6) }, 0.08)
     end)
+    bind(uis.InputChanged, function(i)
+        if not bObj then return end
+        if i == bObj
+        or (bObj.UserInputType == Enum.UserInputType.MouseButton1
+            and i.UserInputType == Enum.UserInputType.MouseMovement) then
+            local d = Vector2.new(i.Position.X, i.Position.Y) - bStart
+            if not bMoved and d.Magnitude > 8 then bMoved = true end   -- small wiggle still counts as a tap
+            if bMoved then
+                mbtn.Position = UDim2.fromOffset(clampBubble(bPos0.X + d.X, bPos0.Y + d.Y))
+            end
+        end
+    end)
+    bind(uis.InputEnded, function(i)
+        if not bObj then return end
+        if i == bObj
+        or (bObj.UserInputType == Enum.UserInputType.MouseButton1
+            and i.UserInputType == Enum.UserInputType.MouseButton1) then
+            local wasTap = not bMoved
+            bObj = nil
+            tw(mbtn, { Size = UDim2.fromOffset(BUB, BUB) }, 0.12)
+            if wasTap then hub.Visible = not hub.Visible end
+        end
+    end)
+
+    -- start on the left edge, vertically centred; keep on screen when the screen changes
+    task.defer(function()
+        local ss = sg.AbsoluteSize
+        mbtn.Position = UDim2.fromOffset(clampBubble(16 + BUB / 2, ss.Y * 0.5))
+    end)
+    sg:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        mbtn.Position = UDim2.fromOffset(clampBubble(mbtn.Position.X.Offset, mbtn.Position.Y.Offset))
+    end)
+
+    -- ── Unload confirmation (opened by the red button) ────────────────────────
+    confirm = ni("Frame", {
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundColor3       = c.blk,
+        BackgroundTransparency = 0.45,
+        BorderSizePixel        = 0,
+        Visible                = false,
+        Active                 = true,       -- swallow clicks so nothing behind it can be pressed
+        ZIndex                 = 150,
+    }, sg)
+
+    local cCard = ni("Frame", {
+        Size             = UDim2.new(0.9, 0, 0, 176),
+        AnchorPoint      = Vector2.new(0.5, 0.5),
+        Position         = UDim2.fromScale(0.5, 0.5),
+        BackgroundColor3 = c.card,
+        BorderSizePixel  = 0,
+        ZIndex           = 151,
+    }, confirm)
+    ni("UISizeConstraint", { MaxSize = Vector2.new(320, 176) }, cCard)
+    rnd(8, cCard); stk(c.bdrBt, 1, cCard)
+
+    lbl({
+        Size           = UDim2.new(1, -24, 0, 20),
+        Position       = UDim2.fromOffset(12, 14),
+        Text           = "UNLOAD " .. string.upper(title) .. "?",
+        TextSize       = 12,
+        Font           = fn.bd,
+        TextColor3     = c.red,
+        ZIndex         = 152,
+    }, cCard)
+    lbl({
+        Size           = UDim2.new(1, -24, 0, 60),
+        Position       = UDim2.fromOffset(12, 40),
+        Text           = "This removes the UI and stops everything it started. You will need to execute the script again to use it.",
+        TextSize       = 11,
+        Font           = fn.reg,
+        TextColor3     = c.t1,
+        TextWrapped    = true,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        ZIndex         = 152,
+    }, cCard)
+
+    local btnH = TOUCH and 42 or 36
+    local noBtn = ni("TextButton", {
+        Size             = UDim2.new(0.5, -18, 0, btnH),
+        AnchorPoint      = Vector2.new(0, 1),
+        Position         = UDim2.new(0, 12, 1, -12),
+        BackgroundColor3 = c.cardHv,
+        Text             = "No",
+        TextColor3       = c.t0,
+        TextSize         = 12,
+        Font             = fn.sb,
+        AutoButtonColor  = false,
+        BorderSizePixel  = 0,
+        ZIndex           = 152,
+    }, cCard)
+    rnd(5, noBtn); stk(c.bdr, 1, noBtn)
+
+    local yesBtn = ni("TextButton", {
+        Size             = UDim2.new(0.5, -18, 0, btnH),
+        AnchorPoint      = Vector2.new(1, 1),
+        Position         = UDim2.new(1, -12, 1, -12),
+        BackgroundColor3 = c.red,
+        Text             = "Yes, unload",
+        TextColor3       = c.wht,
+        TextSize         = 12,
+        Font             = fn.bd,
+        AutoButtonColor  = false,
+        BorderSizePixel  = 0,
+        ZIndex           = 152,
+    }, cCard)
+    rnd(5, yesBtn)
+
+    noBtn.MouseButton1Click:Connect(function() confirm.Visible = false end)
+    yesBtn.MouseButton1Click:Connect(function() ZhonyaLib:Destroy() end)
 
     -- ── Open hub ─────────────────────────────────────────────────────────────
 
@@ -657,7 +796,7 @@ function ZhonyaLib:CreateWindow(opts)
 
     -- ── Keybind toggle ────────────────────────────────────────────────────────
 
-    uis.InputBegan:Connect(function(i, gpe)
+    bind(uis.InputBegan, function(i, gpe)
         if gpe then return end
         if i.UserInputType == Enum.UserInputType.Keyboard and i.KeyCode == activeBk then
             if hub then hub.Visible = not hub.Visible end
@@ -1014,7 +1153,7 @@ function ZhonyaLib:CreateWindow(opts)
                 end)
             end)
 
-            uis.InputChanged:Connect(function(i)
+            bind(uis.InputChanged, function(i)
                 if not ds then return end
                 if i == dsObj
                 or (dsObj.UserInputType == Enum.UserInputType.MouseButton1
@@ -1234,7 +1373,7 @@ function ZhonyaLib:CreateWindow(opts)
                 tw(bdg, { BackgroundColor3 = c.accDm }, 0.1)
             end)
 
-            uis.InputBegan:Connect(function(inp, gp2)
+            bind(uis.InputBegan, function(inp, gp2)
                 if not lstn then return end
                 if gp2 then return end
                 if inp.KeyCode ~= Enum.KeyCode.Unknown then
@@ -1376,8 +1515,25 @@ end
 
 -- ── ZhonyaLib:Destroy ─────────────────────────────────────────────────────────
 
+function ZhonyaLib:OnUnload(fn)
+    if type(fn) == "function" then table.insert(unloadCbs, fn) end
+end
+
+local unloaded = false
 function ZhonyaLib:Destroy()
-    sg:Destroy()
+    if unloaded then return end
+    unloaded = true
+    for _, fn in ipairs(unloadCbs) do pcall(fn) end      -- your own cleanup first
+    for _, cn in ipairs(conns) do pcall(function() cn:Disconnect() end) end
+    table.clear(conns)
+    pcall(function() sg:Destroy() end)
+    local env = (getgenv and getgenv()) or _G
+    if env.__ZhonyaLibUnload then env.__ZhonyaLibUnload = nil end
+end
+
+do
+    local env = (getgenv and getgenv()) or _G
+    env.__ZhonyaLibUnload = function() ZhonyaLib:Destroy() end
 end
 
 return ZhonyaLib
