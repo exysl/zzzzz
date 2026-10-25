@@ -1,5 +1,5 @@
 --[[
-    ZhonyaLib — Standalone UI Library (Mobile Enhanced)
+    ZhonyaLib — Standalone UI Library (Mobile Enhanced & Safe-Area Fixed)
 ]]
 
 -- Services with cloneref support
@@ -158,6 +158,8 @@ local sg = ni("ScreenGui", {
     ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
 }, gpar)
 if syn and syn.protect_gui then pcall(function() syn.protect_gui(sg) end) end
+
+-- FIX: Force the ScreenGui to respect mobile notches and system bars
 pcall(function() sg.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 
 -- Notification holder
@@ -235,13 +237,17 @@ function ZhonyaLib:Notify(opts)
     end)
 end
 
--- Viewport size helper
+-- FIX: Viewport size helper now grabs the SAFE area instead of the full screen
 local function getViewportSize()
+    local vs = sg.AbsoluteSize
+    if vs.X > 0 and vs.Y > 0 then
+        return vs
+    end
     local camera = workspace.CurrentCamera
     if camera then
         return camera.ViewportSize
     end
-    return sg.AbsoluteSize
+    return Vector2.new(800, 600)
 end
 
 function ZhonyaLib:CreateWindow(opts)
@@ -252,16 +258,14 @@ function ZhonyaLib:CreateWindow(opts)
     local activeBk = Enum.KeyCode.LeftControl
 
     local isMobile = TOUCH
+    
+    -- FIX: Adjusted multipliers to ensure the UI doesn't stretch past the screen edges
     local function getHubSize()
         local vs = getViewportSize()
         local w, h
         if isMobile then
-            w = math.clamp(math.floor(vs.X * 0.92), 300, 600)
-            h = math.clamp(math.floor(vs.Y * 0.80), 300, 500)
-            if vs.X > vs.Y then
-                w = math.clamp(math.floor(vs.X * 0.75), 400, 700)
-                h = math.clamp(math.floor(vs.Y * 0.85), 300, 500)
-            end
+            w = math.clamp(math.floor(vs.X * 0.88), 280, 550)
+            h = math.clamp(math.floor(vs.Y * 0.80), 280, 500)
         else
             w = math.clamp(math.floor(vs.X * 0.60), 460, 620)
             h = math.clamp(math.floor(vs.Y * 0.65), 360, 480)
@@ -311,10 +315,11 @@ function ZhonyaLib:CreateWindow(opts)
     local dTgt    = Vector2.zero
     local hTw     = nil
 
+    -- FIX: Clamp ensures the window stays completely inside the safe bounds
     local function clampPos(x, y)
         local vs = getViewportSize()
-        x = math.clamp(x, 60 - hub.AbsoluteSize.X, vs.X - 60)
-        y = math.clamp(y, 0, vs.Y - 44)
+        x = math.clamp(x, 0, math.max(0, vs.X - hub.AbsoluteSize.X))
+        y = math.clamp(y, 0, math.max(0, vs.Y - hub.AbsoluteSize.Y))
         return x, y
     end
 
@@ -743,8 +748,11 @@ function ZhonyaLib:CreateWindow(opts)
         local vs = getViewportSize()
         HUB_W, HUB_H = getHubSize()
         hub.Size = UDim2.fromOffset(HUB_W, HUB_H)
+        
+        -- FIX: Centering now uses the Safe Area math
         local tx = math.floor(vs.X / 2 - HUB_W / 2)
         local ty = math.floor(vs.Y / 2 - HUB_H / 2)
+        
         hub.Position = UDim2.fromOffset(tx, vs.Y + 20)
         hub.Visible  = true
         hTw = ts:Create(hub, TweenInfo.new(0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = UDim2.fromOffset(tx, ty) })
@@ -762,6 +770,7 @@ function ZhonyaLib:CreateWindow(opts)
         chipF.Size  = UDim2.fromOffset(SB_W, chipH)
         scr.Size    = UDim2.new(1, -SB_W, 1, -40)
         scr.Position = UDim2.new(0, SB_W, 0, 40)
+        
         local vs = getViewportSize()
         hub.Position = UDim2.fromOffset(math.floor(vs.X / 2 - HUB_W / 2), math.floor(vs.Y / 2 - HUB_H / 2))
     end)
@@ -841,16 +850,34 @@ function ZhonyaLib:CreateWindow(opts)
             end
         end
 
-        hoverConn(nb.MouseEnter, function()    if actTab ~= name then tw(nb, { BackgroundColor3 = c.card }, 0.1) end end)
-        hoverConn(nb.MouseLeave, function()    if actTab ~= name then tw(nb, { BackgroundColor3 = c.side }, 0.1) end end)
+        local currentTab = { nb = nb, pg = pg, setAct = setAct, showPg = showPg }
+        table.insert(tabs, currentTab)
+
+        local function selectTab()
+            for _, t in ipairs(tabs) do
+                if t == currentTab then
+                    t.setAct(true)
+                    t.showPg()
+                else
+                    t.setAct(false)
+                    t.pg.Visible = false
+                end
+            end
+        end
+
+        hoverConn(nb.MouseEnter, function()    if actTab ~= currentTab then tw(nb, { BackgroundColor3 = c.card }, 0.1) end end)
+        hoverConn(nb.MouseLeave, function()    if actTab ~= currentTab then tw(nb, { BackgroundColor3 = c.side }, 0.1) end end)
+        
         nb.MouseButton1Click:Connect(function()
-            if actTab == name then return end
-            if tabs[actTab] then tabs[actTab].sa(false); tabs[actTab].pg.Visible = false end
-            actTab = name; setAct(true); showPg()
+            if actTab == currentTab then return end
+            actTab = currentTab
+            selectTab()
         end)
 
-        tabs[name] = { sa = setAct, pg = pg }
-        if idx == 1 then actTab = name; setAct(true); showPg() end
+        if idx == 1 then 
+            actTab = currentTab
+            selectTab()
+        end
 
         local lo = 0
         local function nlo() lo = lo + 1; return lo end
@@ -1211,7 +1238,6 @@ function ZhonyaLib:CreateWindow(opts)
                 TextColor3 = c.t1,
             }, wrap)
 
-            -- Shifted text slightly to make room for the new + / - icon
             local sLbl = ni("TextLabel", {
                 Size               = UDim2.new(0.4, 0, 0, 16),
                 AnchorPoint        = Vector2.new(1, 0),
@@ -1224,7 +1250,6 @@ function ZhonyaLib:CreateWindow(opts)
                 TextXAlignment     = Enum.TextXAlignment.Right,
             }, wrap)
 
-            -- FIX: Replaced the ▾ symbol with + and - to avoid missing font glitches
             local arr = ni("TextLabel", {
                 Size               = UDim2.fromOffset(14, 14),
                 AnchorPoint        = Vector2.new(1, 0.5),
@@ -1239,7 +1264,6 @@ function ZhonyaLib:CreateWindow(opts)
                 ZIndex             = 3,
             }, wrap)
 
-            -- Capped at 130px (exactly 5 items)
             local maxListHeight = 130
             local itemHeight = 26
             local listH = #opts * itemHeight
@@ -1301,7 +1325,7 @@ function ZhonyaLib:CreateWindow(opts)
 
                 if isOp then
                     lstF.Visible = true
-                    lstF.CanvasPosition = Vector2.new(0, 0) -- Reset scroll to top when opened
+                    lstF.CanvasPosition = Vector2.new(0, 0)
                 end
                 
                 arr.Text = isOp and "-" or "+"
